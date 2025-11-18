@@ -67,4 +67,4 @@ Visit [citemaven.com](https://citemaven.com) for more information.
 
 ---
 
-*From Fragments to Flawless - CiteMaven transforms your citations with expertise.*
+*From Fragments to Flawless - CiteMaven transforms your citations with expertise.*# CiteMaven v1.0
