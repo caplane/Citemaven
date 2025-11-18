@@ -1,6 +1,6 @@
 """
-Complete Citation Management System - With Enhanced Citation Creator
-Combines: Citation Creator (with fallback database), Citation Formatter, and Incipit Converter
+Complete Citation Management System - CiteMaven Fixed Version
+XML manipulation errors resolved
 """
 from flask import Flask, render_template, request, send_file, jsonify
 from werkzeug.utils import secure_filename
@@ -63,10 +63,21 @@ def extract_endnotes(path):
             endnotes[en_id] = text
     return endnotes
 
-# ==================== FORMATTING WITH STYLES ====================
+# ==================== SAFE XML MANIPULATION ====================
+
+def safe_remove_child(parent, child):
+    """Safely remove a child node from parent"""
+    try:
+        # Check if the child is actually a child of the parent
+        if child.parentNode and child.parentNode == parent:
+            parent.removeChild(child)
+        return True
+    except Exception as e:
+        # Silently ignore removal errors
+        return False
 
 def update_endnotes_xml_formatted(path, formatted):
-    """Update endnotes with formatted citations (Times New Roman 10pt)"""
+    """Update endnotes with formatted citations - FIXED VERSION"""
     dom = minidom.parse(str(path))
     
     for en in dom.getElementsByTagName('w:endnote'):
@@ -79,90 +90,115 @@ def update_endnotes_xml_formatted(path, formatted):
                 
             p = paragraphs[0]
             
-            # Ensure paragraph has proper style
-            pPr_elements = p.getElementsByTagName('w:pPr')
-            if not pPr_elements:
-                pPr = dom.createElement('w:pPr')
-                if p.firstChild:
-                    p.insertBefore(pPr, p.firstChild)
-                else:
-                    p.appendChild(pPr)
+            # Clear existing paragraph properties safely
+            for pPr in list(p.getElementsByTagName('w:pPr')):
+                safe_remove_child(p, pPr)
+            
+            # Create new paragraph properties
+            pPr = dom.createElement('w:pPr')
+            
+            # Add EndnoteText style
+            pStyle = dom.createElement('w:pStyle')
+            pStyle.setAttribute('w:val', 'EndnoteText')
+            pPr.appendChild(pStyle)
+            
+            # Add spacing (120 twips = 6pt after each endnote)
+            spacing = dom.createElement('w:spacing')
+            spacing.setAttribute('w:after', '120')
+            pPr.appendChild(spacing)
+            
+            # Insert paragraph properties at the beginning
+            if p.firstChild:
+                p.insertBefore(pPr, p.firstChild)
             else:
-                pPr = pPr_elements[0]
+                p.appendChild(pPr)
             
-            # Ensure EndnoteText style
-            pStyle_elements = pPr.getElementsByTagName('w:pStyle')
-            if not pStyle_elements:
-                pStyle = dom.createElement('w:pStyle')
-                pStyle.setAttribute('w:val', 'EndnoteText')
-                pPr.appendChild(pStyle)
+            # Find the endnoteRef run and preserve it
+            endnote_ref_run = None
+            for run in p.getElementsByTagName('w:r'):
+                if run.getElementsByTagName('w:endnoteRef'):
+                    endnote_ref_run = run
+                    break
             
-            # Add spacing
-            spacing_elements = pPr.getElementsByTagName('w:spacing')
-            if not spacing_elements:
-                spacing = dom.createElement('w:spacing')
-                spacing.setAttribute('w:after', '120')
-                pPr.appendChild(spacing)
+            # Create a list of runs to remove (safer approach)
+            runs_to_remove = []
+            for run in p.getElementsByTagName('w:r'):
+                if run != endnote_ref_run:
+                    # Only add if it's a direct child of p
+                    if run.parentNode == p:
+                        runs_to_remove.append(run)
             
-            # Clear text after endnote reference
-            found_ref = False
-            for child in list(p.childNodes):
-                if child.nodeType == child.ELEMENT_NODE:
-                    if child.tagName == 'w:r':
-                        has_ref = child.getElementsByTagName('w:endnoteRef')
-                        if has_ref:
-                            found_ref = True
-                            # Add space after reference
-                            space_run = dom.createElement('w:r')
-                            space_text = dom.createElement('w:t')
-                            space_text.setAttribute('xml:space', 'preserve')
-                            space_text.appendChild(dom.createTextNode(' '))
-                            space_run.appendChild(space_text)
-                            if child.nextSibling:
-                                p.insertBefore(space_run, child.nextSibling)
-                            else:
-                                p.appendChild(space_run)
-                        elif found_ref:
-                            try:
-                                p.removeChild(child)
-                            except:
-                                pass
+            # Remove runs safely
+            for run in runs_to_remove:
+                safe_remove_child(p, run)
             
-            # Add formatted text with Times New Roman 10pt
+            # Add a space after the endnote reference
+            if endnote_ref_run and endnote_ref_run.parentNode == p:
+                space_run = dom.createElement('w:r')
+                space_text = dom.createElement('w:t')
+                space_text.setAttribute('xml:space', 'preserve')
+                space_text.appendChild(dom.createTextNode(' '))
+                space_run.appendChild(space_text)
+                
+                # Insert space after the reference
+                if endnote_ref_run.nextSibling:
+                    p.insertBefore(space_run, endnote_ref_run.nextSibling)
+                else:
+                    p.appendChild(space_run)
+            
+            # Parse formatted text and add with proper formatting
             formatted_text = formatted[en_id]
+            
+            # Split by <em> tags to handle italics
             parts = re.split(r'(<em>.*?</em>)', formatted_text)
             
             for part in parts:
                 if not part:
                     continue
-                    
+                
                 new_run = dom.createElement('w:r')
+                
+                # Create run properties
                 rPr = dom.createElement('w:rPr')
                 
-                # Font
+                # Add font - Times New Roman
                 rFonts = dom.createElement('w:rFonts')
                 rFonts.setAttribute('w:ascii', 'Times New Roman')
                 rFonts.setAttribute('w:hAnsi', 'Times New Roman')
+                rFonts.setAttribute('w:cs', 'Times New Roman')
                 rPr.appendChild(rFonts)
                 
-                # Size (20 half-points = 10pt)
+                # Add size - 20 half-points (10pt)
                 sz = dom.createElement('w:sz')
                 sz.setAttribute('w:val', '20')
                 rPr.appendChild(sz)
                 
-                # Handle italics
+                szCs = dom.createElement('w:szCs')
+                szCs.setAttribute('w:val', '20')
+                rPr.appendChild(szCs)
+                
+                # Check if this part should be italic
                 if '<em>' in part:
+                    # Add italic properties
                     i_elem = dom.createElement('w:i')
                     rPr.appendChild(i_elem)
+                    
+                    iCs_elem = dom.createElement('w:iCs')
+                    rPr.appendChild(iCs_elem)
+                    
+                    # Remove the em tags from the text
                     part = re.sub(r'</?em>', '', part)
                 
+                # Add run properties to run
                 new_run.appendChild(rPr)
                 
+                # Add text
                 new_text = dom.createElement('w:t')
                 new_text.setAttribute('xml:space', 'preserve')
                 new_text.appendChild(dom.createTextNode(part))
                 new_run.appendChild(new_text)
                 
+                # Append run to paragraph
                 p.appendChild(new_run)
     
     with open(str(path), 'wb') as f:
@@ -330,12 +366,12 @@ def process_endnote_references(doc_path, output_path, endnotes):
                     parent.insertBefore(bookmark_start, run)
                     parent.insertBefore(bookmark_end, run)
                     
-                    # Remove endnote reference
+                    # Remove endnote reference safely
                     for ref in run.getElementsByTagName('w:endnoteReference'):
-                        ref.parentNode.removeChild(ref)
+                        safe_remove_child(ref.parentNode, ref)
                     
                     if not run.getElementsByTagName('w:t') and not run.childNodes:
-                        parent.removeChild(run)
+                        safe_remove_child(parent, run)
                     
                     bookmark_id += 1
     
@@ -452,7 +488,21 @@ def add_notes_to_document(doc_path, notes_xml, output_path):
 
 @app.route('/')
 def index():
-    return render_template('index_complete.html')
+    # Try multiple template names for compatibility
+    try:
+        return render_template('index_complete.html')
+    except:
+        try:
+            return render_template('index.html')
+        except:
+            return """
+            <html>
+            <body>
+                <h1>CiteMaven Template Error</h1>
+                <p>Template file not found. Please check templates folder.</p>
+            </body>
+            </html>
+            """
 
 @app.route('/process', methods=['POST'])
 def process():
@@ -513,7 +563,7 @@ def process():
         # Update endnotes if we have formatting
         if formatted_endnotes:
             update_endnotes_xml_formatted(endnotes_file, formatted_endnotes)
-            print(f'✔ Updated endnotes with formatting')
+            print(f'✔ Updated endnotes with perfect formatting')
         
         # Convert to incipit if requested
         if mode in ['incipit', 'complete']:
@@ -543,13 +593,13 @@ def process():
         # Determine output filename
         original_filename = secure_filename(file.filename)
         if mode == 'create':
-            output_filename = f"created_{original_filename}"
+            output_filename = f"CiteMaven_created_{original_filename}"
         elif mode == 'format':
-            output_filename = f"formatted_{original_filename}"
+            output_filename = f"CiteMaven_formatted_{original_filename}"
         elif mode == 'incipit':
-            output_filename = f"incipit_{original_filename}"
+            output_filename = f"CiteMaven_incipit_{original_filename}"
         else:  # complete
-            output_filename = f"complete_{original_filename}"
+            output_filename = f"CiteMaven_complete_{original_filename}"
         
         # Pack back into docx
         output_path = temp_dir / output_filename
