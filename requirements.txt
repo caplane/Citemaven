@@ -1,4 +1,2 @@
 Flask
-Werkzeug
 requests
-gunicorn
