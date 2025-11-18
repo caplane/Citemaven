@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review Citations - Citation Processor</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 40px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .stat {
+            flex: 1;
+            text-align: center;
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .citation-card {
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        
+        .citation-card.edited {
+            border-color: #ffc107;
+            background: #fff9e6;
+        }
+        
+        .citation-card.approved {
+            border-color: #28a745;
+            background: #e8f5e9;
+        }
+        
+        .citation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        
+        .citation-number {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 1.1em;
+        }
+        
+        .source-type {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        .type-book {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+        
+        .type-journal_article {
+            background: #f3e5f5;
+            color: #6a1b9a;
+        }
+        
+        .type-newspaper_article {
+            background: #fff3e0;
+            color: #e65100;
+        }
+        
+        .type-website {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+        
+        .type-book_chapter {
+            background: #fce4ec;
+            color: #c2185b;
+        }
+        
+        .type-unknown {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .citation-section {
+            margin: 15px 0;
+        }
+        
+        .section-label {
+            font-weight: 600;
+            color: #555;
+            font-size: 0.9em;
+            margin-bottom: 8px;
+        }
+        
+        .citation-text {
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 3px solid #ddd;
+            font-family: Georgia, serif;
+            line-height: 1.6;
+        }
+        
+        .citation-text.original {
+            border-left-color: #999;
+        }
+        
+        .citation-text.formatted {
+            border-left-color: #667eea;
+        }
+        
+        textarea.edit-field {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #667eea;
+            border-radius: 4px;
+            font-family: Georgia, serif;
+            font-size: 1em;
+            line-height: 1.6;
+            min-height: 80px;
+            resize: vertical;
+        }
+        
+        .actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-edit {
+            background: #ffc107;
+            color: #000;
+        }
+        
+        .btn-edit:hover {
+            background: #ffb300;
+        }
+        
+        .btn-save {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-save:hover {
+            background: #218838;
+        }
+        
+        .btn-cancel {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-cancel:hover {
+            background: #5a6268;
+        }
+        
+        .btn-approve {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-approve:hover {
+            background: #218838;
+        }
+        
+        .bottom-actions {
+            position: sticky;
+            bottom: 0;
+            background: white;
+            padding: 20px;
+            border-top: 2px solid #e9ecef;
+            margin: 30px -40px -40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .btn-large {
+            padding: 15px 40px;
+            font-size: 1.1em;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .confidence-indicator {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        
+        .confidence-high {
+            background: #c8e6c9;
+            color: #2e7d32;
+        }
+        
+        .confidence-medium {
+            background: #fff9c4;
+            color: #f57f17;
+        }
+        
+        .confidence-low {
+            background: #ffcdd2;
+            color: #c62828;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📝 Review Citations</h1>
+        <p class="subtitle">Review and edit citations before finalizing your document</p>
+        
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-number" id="totalCount">0</div>
+                <div class="stat-label">Total Citations</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number" id="approvedCount">0</div>
+                <div class="stat-label">Approved</div>
+            </div>
+            <div class="stat">
+                <div class="stat-number" id="editedCount">0</div>
+                <div class="stat-label">Edited</div>
+            </div>
+        </div>
+        
+        <div id="citationsContainer"></div>
+        
+        <div class="bottom-actions">
+            <button class="btn btn-secondary btn-large" onclick="cancelReview()">
+                ← Back to Upload
+            </button>
+            <button class="btn btn-primary btn-large" onclick="finalize()" id="finalizeBtn">
+                ✓ Finalize & Download
+            </button>
+        </div>
+    </div>
+    
+    <script>
+        // This would be populated by the server
+        let citations = {{ citations|tojson|safe }};
+        let editedCitations = {};
+        
+        function renderCitations() {
+            const container = document.getElementById('citationsContainer');
+            container.innerHTML = '';
+            
+            citations.forEach((citation, index) => {
+                const card = createCitationCard(citation, index);
+                container.appendChild(card);
+            });
+            
+            updateStats();
+        }
+        
+        function createCitationCard(citation, index) {
+            const card = document.createElement('div');
+            card.className = 'citation-card';
+            card.id = `citation-${index}`;
+            
+            const sourceType = citation.source_type || 'unknown';
+            const confidence = citation.confidence || 'medium';
+            
+            card.innerHTML = `
+                <div class="citation-header">
+                    <div>
+                        <span class="citation-number">Citation #${index + 1}</span>
+                        <span class="source-type type-${sourceType}">${formatSourceType(sourceType)}</span>
+                        <span class="confidence-indicator confidence-${confidence}">${confidence.toUpperCase()}</span>
+                    </div>
+                </div>
+                
+                <div class="citation-section">
+                    <div class="section-label">Original Citation:</div>
+                    <div class="citation-text original">${escapeHtml(citation.original_text)}</div>
+                </div>
+                
+                <div class="citation-section">
+                    <div class="section-label">Formatted Citation (${citation.style || 'Chicago'}):</div>
+                    <div class="citation-text formatted" id="formatted-${index}">${citation.formatted_text}</div>
+                    <textarea class="edit-field hidden" id="edit-${index}">${stripHtml(citation.formatted_text)}</textarea>
+                </div>
+                
+                <div class="actions" id="actions-${index}">
+                    <button class="btn btn-edit" onclick="editCitation(${index})">✏️ Edit</button>
+                    <button class="btn btn-approve" onclick="approveCitation(${index})">✓ Approve</button>
+                </div>
+                
+                <div class="actions hidden" id="edit-actions-${index}">
+                    <button class="btn btn-save" onclick="saveCitation(${index})">💾 Save</button>
+                    <button class="btn btn-cancel" onclick="cancelEdit(${index})">✕ Cancel</button>
+                </div>
+            `;
+            
+            return card;
+        }
+        
+        function editCitation(index) {
+            const card = document.getElementById(`citation-${index}`);
+            const formatted = document.getElementById(`formatted-${index}`);
+            const editField = document.getElementById(`edit-${index}`);
+            const actions = document.getElementById(`actions-${index}`);
+            const editActions = document.getElementById(`edit-actions-${index}`);
+            
+            formatted.classList.add('hidden');
+            editField.classList.remove('hidden');
+            actions.classList.add('hidden');
+            editActions.classList.remove('hidden');
+        }
+        
+        function saveCitation(index) {
+            const card = document.getElementById(`citation-${index}`);
+            const formatted = document.getElementById(`formatted-${index}`);
+            const editField = document.getElementById(`edit-${index}`);
+            const actions = document.getElementById(`actions-${index}`);
+            const editActions = document.getElementById(`edit-actions-${index}`);
+            
+            const newText = editField.value;
+            formatted.textContent = newText;
+            editedCitations[index] = newText;
+            
+            formatted.classList.remove('hidden');
+            editField.classList.add('hidden');
+            actions.classList.remove('hidden');
+            editActions.classList.add('hidden');
+            
+            card.classList.add('edited');
+            updateStats();
+        }
+        
+        function cancelEdit(index) {
+            const formatted = document.getElementById(`formatted-${index}`);
+            const editField = document.getElementById(`edit-${index}`);
+            const actions = document.getElementById(`actions-${index}`);
+            const editActions = document.getElementById(`edit-actions-${index}`);
+            
+            formatted.classList.remove('hidden');
+            editField.classList.add('hidden');
+            actions.classList.remove('hidden');
+            editActions.classList.add('hidden');
+        }
+        
+        function approveCitation(index) {
+            const card = document.getElementById(`citation-${index}`);
+            card.classList.add('approved');
+            updateStats();
+        }
+        
+        function updateStats() {
+            document.getElementById('totalCount').textContent = citations.length;
+            document.getElementById('editedCount').textContent = Object.keys(editedCitations).length;
+            
+            const approvedCount = document.querySelectorAll('.citation-card.approved').length;
+            document.getElementById('approvedCount').textContent = approvedCount;
+        }
+        
+        function formatSourceType(type) {
+            const types = {
+                'book': 'Book',
+                'journal_article': 'Journal Article',
+                'newspaper_article': 'Newspaper',
+                'website': 'Website',
+                'book_chapter': 'Book Chapter',
+                'unknown': 'Unknown'
+            };
+            return types[type] || type;
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function stripHtml(html) {
+            const tmp = document.createElement('div');
+            tmp.innerHTML = html;
+            return tmp.textContent || tmp.innerText || '';
+        }
+        
+        async function finalize() {
+            const finalizeBtn = document.getElementById('finalizeBtn');
+            finalizeBtn.disabled = true;
+            finalizeBtn.textContent = 'Processing...';
+            
+            // Send edited citations and download
+            const response = await fetch('/finalize', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    edited: editedCitations,
+                session_id: '{{ session_id }}'
+                })
+            });
+            
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'formatted_citations.docx';
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+            } else {
+                alert('Error finalizing document. Please try again.');
+            }
+            
+            finalizeBtn.disabled = false;
+            finalizeBtn.textContent = '✓ Finalize & Download';
+        }
+        
+        function cancelReview() {
+            if (confirm('Are you sure? Your edits will be lost.')) {
+                window.location.href = '/';
+            }
+        }
+        
+        // Initialize
+        renderCitations();
+    </script>
+</body>
+</html>
