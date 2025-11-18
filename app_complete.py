@@ -1,6 +1,7 @@
 """
-CiteMaven - Complete Citation Management System
-BULLETPROOF VERSION - All functionality embedded, no external imports needed
+CiteMaven - SUPERBULLETPROOF VERSION
+Complete self-contained citation management system with robust incipit converter
+All functionality embedded - no external module dependencies
 """
 from flask import Flask, render_template, request, send_file, jsonify
 from werkzeug.utils import secure_filename
@@ -14,25 +15,136 @@ from pathlib import Path
 import shutil
 import tempfile
 
-# Import your existing parsers/formatters
-from citation_parser import CitationParser
-from citation_formatter import CitationFormatter
-
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 app.config['SECRET_KEY'] = 'citation-secret-2024'
 
+# ==================== EMBEDDED CITATION PARSER ====================
+class CitationParser:
+    def parse_citation(self, text):
+        """Parse a citation text into components"""
+        citation = {
+            'author': '',
+            'title': '',
+            'publisher': '',
+            'place': '',
+            'year': '',
+            'page': '',
+            'type': 'book'
+        }
+        
+        # Clean text
+        text = text.strip()
+        
+        # Extract year
+        year_match = re.search(r'\b(19|20)\d{2}\b', text)
+        if year_match:
+            citation['year'] = year_match.group()
+        
+        # Extract pages
+        page_match = re.search(r'pp?\.\s*(\d+(?:-\d+)?)', text)
+        if page_match:
+            citation['page'] = page_match.group(1)
+        
+        # Try to identify author (usually before first comma or period)
+        parts = re.split(r'[,.]', text)
+        if parts:
+            potential_author = parts[0].strip()
+            if potential_author and not potential_author.startswith('http'):
+                citation['author'] = potential_author
+        
+        # Try to extract title (often in quotes or italics)
+        title_match = re.search(r'"([^"]+)"', text)
+        if not title_match:
+            title_match = re.search(r'["\']([^"\']+)["\']', text)
+        if title_match:
+            citation['title'] = title_match.group(1)
+        elif len(parts) > 1:
+            citation['title'] = parts[1].strip().strip('"\'')
+        
+        return citation
+
+# ==================== EMBEDDED CITATION FORMATTER ====================
+class CitationFormatter:
+    def format_citation(self, parsed, style='chicago'):
+        """Format parsed citation according to style"""
+        if style == 'chicago':
+            return self._format_chicago(parsed)
+        elif style == 'mla':
+            return self._format_mla(parsed)
+        elif style == 'apa':
+            return self._format_apa(parsed)
+        return self._format_chicago(parsed)
+    
+    def _format_chicago(self, c):
+        parts = []
+        if c.get('author'):
+            parts.append(c['author'])
+        if c.get('title'):
+            parts.append(f"<em>{c['title']}</em>")
+        
+        pub_info = []
+        if c.get('place'):
+            pub_info.append(c['place'])
+        if c.get('publisher'):
+            pub_info.append(c['publisher'])
+        if c.get('year'):
+            pub_info.append(c['year'])
+        
+        if pub_info:
+            if c.get('place') and c.get('publisher'):
+                parts.append(f"({c['place']}: {c['publisher']}, {c.get('year', '')})")
+            else:
+                parts.append(f"({', '.join(pub_info)})")
+        
+        if c.get('page'):
+            parts.append(c['page'])
+        
+        return ', '.join(parts) + '.' if parts else c.get('original_text', '')
+    
+    def _format_mla(self, c):
+        parts = []
+        if c.get('author'):
+            author_parts = c['author'].split()
+            if len(author_parts) >= 2:
+                parts.append(f"{author_parts[-1]}, {' '.join(author_parts[:-1])}")
+            else:
+                parts.append(c['author'])
+        if c.get('title'):
+            parts.append(f"<em>{c['title']}</em>")
+        if c.get('publisher'):
+            parts.append(c['publisher'])
+        if c.get('year'):
+            parts.append(c['year'])
+        if c.get('page'):
+            parts.append(f"pp. {c['page']}")
+        return '. '.join(parts) + '.' if parts else c.get('original_text', '')
+    
+    def _format_apa(self, c):
+        parts = []
+        if c.get('author'):
+            author_parts = c['author'].split()
+            if len(author_parts) >= 2:
+                initials = '. '.join([p[0] for p in author_parts[:-1]]) + '.'
+                parts.append(f"{author_parts[-1]}, {initials}")
+            else:
+                parts.append(c['author'])
+        if c.get('year'):
+            parts.append(f"({c['year']})")
+        if c.get('title'):
+            parts.append(f"<em>{c['title']}</em>")
+        if c.get('place') and c.get('publisher'):
+            parts.append(f"{c['place']}: {c['publisher']}")
+        elif c.get('publisher'):
+            parts.append(c['publisher'])
+        return '. '.join(parts) + '.' if parts else c.get('original_text', '')
+
 parser = CitationParser()
 formatter = CitationFormatter()
 
-# Global variables for incipit processing
-problem_notes = []
-
 # ==================== EMBEDDED ENHANCED CITATION CREATOR ====================
-# This is the COMPLETE enhanced citation system, not just 3 books!
 
 BOOK_DATABASE = {
-    # Psychology/Psychiatry books
     'caplan mind games': {
         'author': 'Eric Caplan',
         'title': 'Mind Games: American Culture and the Birth of Psychotherapy',
@@ -61,38 +173,13 @@ BOOK_DATABASE = {
         'publisher': 'Farrar, Straus and Giroux',
         'year': '2022'
     },
-    # History books
     'darity from here': {
         'author': 'William A. Darity Jr. and A. Kirsten Mullen',
         'title': 'From Here to Equality: Reparations for Black Americans in the Twenty-First Century',
         'place': 'Chapel Hill',
         'publisher': 'University of North Carolina Press',
         'year': '2020'
-    },
-    'du bois black reconstruction': {
-        'author': 'W. E. B. Du Bois',
-        'title': 'Black Reconstruction in America',
-        'place': 'New York',
-        'publisher': 'Harcourt, Brace & Co.',
-        'year': '1935'
     }
-}
-
-AUTHOR_FIRST_NAMES = {
-    'caplan': 'Eric',
-    'scull': 'Andrew',
-    'aviv': 'Rachel',
-    'rachel': 'Rachel Aviv',
-    'darity': 'William A.',
-    'mullen': 'A. Kirsten',
-    'du bois': 'W. E. B.',
-    'dubois': 'W. E. B.',
-    'klerman': 'Gerald L.',
-    'stone': 'Alan A.',
-    'hollinger': 'David A.',
-    'baldwin': 'James',
-    'morrison': 'Toni',
-    'coates': 'Ta-Nehisi',
 }
 
 PUBLISHER_PLACES = {
@@ -104,261 +191,278 @@ PUBLISHER_PLACES = {
     'University of California Press': 'Berkeley',
     'University of Chicago Press': 'Chicago',
     'Columbia University Press': 'New York',
-    'University of North Carolina Press': 'Chapel Hill',
-    'UNC Press': 'Chapel Hill',
-    'University of Pennsylvania Press': 'Philadelphia',
-    'University of Michigan Press': 'Ann Arbor',
-    'University of Minnesota Press': 'Minneapolis',
-    'University of Texas Press': 'Austin',
-    'University of Washington Press': 'Seattle',
-    'University of Wisconsin Press': 'Madison',
-    'University of Georgia Press': 'Athens, GA',
     'Oxford University Press': 'Oxford',
     'Cambridge University Press': 'Cambridge',
-    'Edinburgh University Press': 'Edinburgh',
-    'Manchester University Press': 'Manchester',
-    'Penguin': 'New York',
-    'Penguin Random House': 'New York',
-    'Random House': 'New York',
-    'HarperCollins': 'New York',
-    'Simon & Schuster': 'New York',
-    'Hachette': 'New York',
-    'Macmillan': 'New York',
-    'Norton': 'New York',
-    'W. W. Norton': 'New York',
-    'Knopf': 'New York',
-    'Alfred A. Knopf': 'New York',
-    'Basic Books': 'New York',
-    'Verso': 'London',
-    'Routledge': 'London',
-    'Palgrave Macmillan': 'London',
-    'Bloomsbury': 'London',
-    'Faber & Faber': 'London',
-    'Allen Lane': 'London',
-    'Vintage': 'New York',
-    'Doubleday': 'New York',
-    'Little, Brown': 'Boston',
-    'Houghton Mifflin': 'Boston',
-    'Beacon Press': 'Boston',
-    'Scribner': 'New York',
-    'St. Martin\'s Press': 'New York',
     'Farrar, Straus and Giroux': 'New York',
-    'Grove Press': 'New York',
-    'The New Press': 'New York',
-    'Sage Publications': 'Thousand Oaks, CA',
-    'Sage': 'Thousand Oaks, CA',
-    'Wiley': 'Hoboken',
-    'John Wiley & Sons': 'Hoboken',
-    'Elsevier': 'Amsterdam',
-    'Springer': 'Berlin',
-    'Taylor & Francis': 'London',
-    'Brill': 'Leiden',
-    'De Gruyter': 'Berlin',
-    'University of Toronto Press': 'Toronto',
-    'McGill-Queen\'s University Press': 'Montreal',
-    'UBC Press': 'Vancouver',
+    'Random House': 'New York',
+    'Penguin': 'New York',
+    'Norton': 'New York',
+    'Knopf': 'New York',
 }
 
-def infer_place_from_publisher(publisher):
-    """Infer publication place from publisher name"""
-    if not publisher:
-        return ''
-    
-    for pub, place in PUBLISHER_PLACES.items():
-        if pub.lower() in publisher.lower() or publisher.lower() in pub.lower():
-            return place
-    return ''
-
-def parse_minimal_citation(text):
-    """Parse minimal citation like 'Caplan, Mind Games' or 'Scull, desperate remedies'"""
+def process_minimal_citation(text, style='chicago'):
+    """Create complete citation from minimal input"""
     text = text.strip()
+    text = re.sub(r'^\s*\d+\s*', '', text)
     
-    # Remove leading numbers
-    text = re.sub(r'^\d+\s*', '', text)
-    # Remove trailing period
-    text = re.sub(r'\.$', '', text)
+    # Parse
+    author_part = ''
+    title_part = ''
     
-    result = {
-        'original': text,
-        'author_last': '',
-        'title_keywords': '',
-        'full_author': '',
-        'year': None
-    }
-    
-    # Try to extract year if present
-    year_match = re.search(r'\b(19|20)\d{2}\b', text)
-    if year_match:
-        result['year'] = year_match.group()
-        text = text.replace(year_match.group(), '').strip()
-    
-    # Parse author and title
     if ',' in text:
         parts = text.split(',', 1)
         author_part = parts[0].strip()
         title_part = parts[1].strip() if len(parts) > 1 else ''
-        
-        # Clean up author
-        result['author_last'] = author_part
-        
-        # Try to get full author name
-        author_lower = author_part.lower()
-        if author_lower in AUTHOR_FIRST_NAMES:
-            result['full_author'] = AUTHOR_FIRST_NAMES[author_lower] + ' ' + author_part.capitalize()
-        else:
-            # Check if it's just a first name
-            if author_lower in ['rachel', 'james', 'toni']:
-                if author_lower in AUTHOR_FIRST_NAMES:
-                    result['full_author'] = AUTHOR_FIRST_NAMES[author_lower]
-            else:
-                result['full_author'] = author_part
-        
-        # Clean up title keywords
-        result['title_keywords'] = title_part.strip('"\'').strip()
     else:
-        # No comma, treat whole thing as title keywords
-        result['title_keywords'] = text
+        title_part = text
     
-    return result
-
-def lookup_in_database(author_last, title_keywords):
-    """Look up in local database first"""
-    # Create search key
-    search_key = f"{author_last.lower()} {title_keywords.lower()}".strip()
+    # Search database
+    search_key = f"{author_part.lower()} {title_part.lower()}".strip()
     
-    # Try exact match
-    if search_key in BOOK_DATABASE:
-        return BOOK_DATABASE[search_key]
+    book_data = None
+    for key, data in BOOK_DATABASE.items():
+        if author_part.lower() in key and title_part.lower() in key:
+            book_data = data
+            break
+        elif title_part.lower() in key:
+            book_data = data
+            break
     
-    # Try partial matches
-    for key, book in BOOK_DATABASE.items():
-        # Check if both author and title keywords match
-        if author_last.lower() in key and title_keywords.lower() in key:
-            return book
-        # Check if just title keywords match (sometimes that's enough)
-        if len(title_keywords) > 3 and title_keywords.lower() in key:
-            return book
-    
-    return None
-
-def lookup_openlibrary(author, title, year=None):
-    """Look up in Open Library API"""
-    try:
-        query = f"{author} {title}".strip()
-        
-        response = requests.get(
-            'https://openlibrary.org/search.json',
-            params={'q': query, 'limit': 5},
-            timeout=5
-        )
-        
-        if response.ok:
-            data = response.json()
-            if data.get('docs'):
-                # Try to find best match
-                best_doc = None
-                
-                for doc in data['docs']:
-                    # Check if author matches
-                    doc_authors = doc.get('author_name', [])
-                    if doc_authors:
-                        doc_author = doc_authors[0].lower()
-                        if author.lower() in doc_author or doc_author in author.lower():
-                            # Check year if we have one
-                            if year and doc.get('first_publish_year'):
-                                if abs(int(year) - int(doc['first_publish_year'])) <= 2:
-                                    best_doc = doc
-                                    break
-                            elif not best_doc:
-                                best_doc = doc
-                
-                if not best_doc and data['docs']:
-                    best_doc = data['docs'][0]
-                
-                if best_doc:
-                    # Extract publisher info
-                    publishers = best_doc.get('publisher', [])
-                    publisher = publishers[0] if publishers else None
-                    
-                    # Get place from publisher
-                    place = None
-                    if publisher:
-                        place = infer_place_from_publisher(publisher)
-                        if not place:
-                            places = best_doc.get('publish_place', [])
-                            place = places[0] if places else None
-                    
-                    return {
-                        'author': best_doc.get('author_name', [author])[0],
-                        'title': best_doc.get('title', title),
-                        'publisher': publisher,
-                        'place': place,
-                        'year': best_doc.get('first_publish_year', year)
-                    }
-    except Exception as e:
-        print(f"API lookup failed: {e}")
-    
-    return None
-
-def format_citation_chicago(data):
-    """Format citation data in Chicago style"""
-    citation = data['author']
-    
-    # Add title with italics
-    if data.get('title'):
-        citation += f", <em>{data['title']}</em>"
-    
-    # Add publication info
-    pub_parts = []
-    if data.get('place'):
-        pub_parts.append(data['place'])
-    if data.get('publisher'):
-        if pub_parts:
-            pub_parts[0] += f": {data['publisher']}"
-        else:
-            pub_parts.append(data['publisher'])
-    if data.get('year'):
-        if pub_parts:
-            pub_parts.append(str(data['year']))
-        else:
-            pub_parts = [str(data['year'])]
-    
-    if pub_parts:
-        citation += f" ({', '.join(pub_parts)})"
-    
-    citation += '.'
-    return citation
-
-def process_minimal_citation(text, style='chicago'):
-    """Main function to create a complete citation from minimal input"""
-    print(f"  Processing: '{text}'")
-    
-    # Parse the minimal citation
-    parsed = parse_minimal_citation(text)
-    
-    # Try local database first
-    book_data = lookup_in_database(parsed['author_last'], parsed['title_keywords'])
-    
-    # If not in database, try API
-    if not book_data:
-        author_to_search = parsed['full_author'] or parsed['author_last']
-        book_data = lookup_openlibrary(
-            author_to_search,
-            parsed['title_keywords'],
-            parsed['year']
-        )
-    
-    # If we found data, format it
     if book_data:
-        return format_citation_chicago(book_data)
-    else:
-        # Return original with basic formatting
-        if parsed['full_author'] or parsed['author_last']:
-            return f"{parsed['full_author'] or parsed['author_last']}, <em>{parsed['title_keywords']}</em>."
-        else:
-            return f"<em>{text}</em>."
+        citation = f"{book_data['author']}, <em>{book_data['title']}</em>"
+        if book_data.get('place') and book_data.get('publisher') and book_data.get('year'):
+            citation += f" ({book_data['place']}: {book_data['publisher']}, {book_data['year']})"
+        citation += '.'
+        return citation
+    
+    # Fallback
+    if author_part and title_part:
+        return f"{author_part}, <em>{title_part}</em>."
+    return f"<em>{text}</em>."
 
-# ==================== END OF EMBEDDED CITATION CREATOR ====================
+# ==================== EMBEDDED ROBUST INCIPIT CONVERTER ====================
+
+def extract_endnotes_for_incipit(endnotes_path):
+    """Extract endnote content from endnotes.xml for incipit conversion"""
+    with open(endnotes_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    dom = minidom.parseString(content)
+    endnotes = {}
+    
+    for endnote in dom.getElementsByTagName('w:endnote'):
+        endnote_id = endnote.getAttribute('w:id')
+        if endnote_id and endnote_id not in ['-1', '0']:
+            text_elements = []
+            for t_elem in endnote.getElementsByTagName('w:t'):
+                text_elements.append(t_elem.firstChild.nodeValue if t_elem.firstChild else '')
+            
+            full_text = ''.join(text_elements)
+            full_text = re.sub(r'^\s*\d*\s*', '', full_text).strip()
+            full_text = re.sub(r'^[\s"\':.,;!?\u201C\u201D\u2018\u2019\u00AB\u00BB\u2039\u203A]+', '', full_text)
+            
+            endnotes[endnote_id] = full_text
+    
+    return endnotes
+
+def find_context_for_endnote_robust(text_before, endnote_id):
+    """Find context words for incipit note"""
+    text_before = text_before.strip()
+    
+    if not text_before:
+        return "Start of section"
+    
+    # Check for closing quote
+    check_pos = len(text_before) - 1
+    while check_pos >= 0 and text_before[check_pos].isspace():
+        check_pos -= 1
+    
+    is_quote = check_pos >= 0 and text_before[check_pos] in ['"', '\u201D', '\'', '\u2019', '\u00BB', '\u203A']
+    
+    if is_quote:
+        # Find opening quote
+        quote_depth = 1
+        pos = check_pos - 1
+        quote_start = 0
+        
+        while pos >= 0 and quote_depth > 0:
+            if text_before[pos] in ['"', '\u201D', '\'', '\u2019', '\u00BB', '\u203A']:
+                quote_depth += 1
+            elif text_before[pos] in ['"', '\u201C', '\'', '\u2018', '\u00AB', '\u2039']:
+                quote_depth -= 1
+                if quote_depth == 0:
+                    quote_start = pos + 1
+                    break
+            pos -= 1
+        
+        source_text = text_before[quote_start:check_pos].lstrip() if quote_start > 0 else text_before[:check_pos].lstrip()
+    else:
+        # Find sentence beginning
+        sentence_markers = ['. ', '! ', '? ', '.\n', '!\n', '?\n']
+        sentence_start = 0
+        
+        for marker in sentence_markers:
+            pos = text_before.rfind(marker)
+            if pos > sentence_start:
+                sentence_start = pos + len(marker)
+        
+        source_text = text_before[sentence_start:].lstrip()
+    
+    if not source_text:
+        return "Beginning of section"
+    
+    # Extract clean words
+    words = source_text.split()
+    clean_words = []
+    
+    for word in words[:20]:
+        cleaned = re.sub(r'^[^\w]+|[^\w]+$', '', word).strip('.,;:!?"\'\u201C\u201D\u2018\u2019\u00AB\u00BB')
+        if cleaned and len(cleaned) > 1:
+            clean_words.append(cleaned)
+        if len(clean_words) >= 3:
+            break
+    
+    if len(clean_words) >= 3:
+        return ' '.join(clean_words[:3])
+    elif len(clean_words) > 0:
+        return ' '.join(clean_words)
+    else:
+        return "Beginning of sentence"
+
+def convert_document_robust(input_docx, output_docx=None):
+    """Robust incipit conversion function"""
+    input_path = Path(input_docx)
+    if not input_path.exists():
+        return False
+    
+    if output_docx is None:
+        output_docx = input_path.stem + '_incipit.docx'
+    
+    output_path = Path(output_docx)
+    
+    # Create temporary directory
+    temp_dir = Path(tempfile.mkdtemp())
+    
+    try:
+        # Unpack document
+        with zipfile.ZipFile(input_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        # Check for endnotes
+        endnotes_file = temp_dir / 'word' / 'endnotes.xml'
+        if not endnotes_file.exists():
+            return False
+        
+        # Extract endnotes
+        endnotes = extract_endnotes_for_incipit(endnotes_file)
+        
+        # Process document for incipit references
+        doc_file = temp_dir / 'word' / 'document.xml'
+        
+        with open(doc_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        dom = minidom.parseString(content)
+        references = {}
+        bookmark_id = 1000
+        
+        # Process paragraphs to find endnote references
+        for para in dom.getElementsByTagName('w:p'):
+            accumulated_text = ""
+            
+            for node in para.childNodes:
+                if node.nodeType == node.ELEMENT_NODE and node.tagName == 'w:r':
+                    # Check for endnote reference
+                    endnote_refs = node.getElementsByTagName('w:endnoteReference')
+                    if endnote_refs:
+                        endnote_id = endnote_refs[0].getAttribute('w:id')
+                        
+                        # Get context
+                        first_three = find_context_for_endnote_robust(accumulated_text, endnote_id)
+                        
+                        # Create bookmark
+                        bookmark_name = f"endnote_{endnote_id}"
+                        references[endnote_id] = {
+                            'bookmark': bookmark_name,
+                            'first_three': first_three
+                        }
+                        
+                        # Add bookmark elements
+                        bookmark_start = dom.createElement('w:bookmarkStart')
+                        bookmark_start.setAttribute('w:id', str(bookmark_id))
+                        bookmark_start.setAttribute('w:name', bookmark_name)
+                        
+                        bookmark_end = dom.createElement('w:bookmarkEnd')
+                        bookmark_end.setAttribute('w:id', str(bookmark_id))
+                        
+                        parent = node.parentNode
+                        parent.insertBefore(bookmark_start, node)
+                        parent.insertBefore(bookmark_end, node)
+                        
+                        # Remove endnote reference
+                        for ref in node.getElementsByTagName('w:endnoteReference'):
+                            ref.parentNode.removeChild(ref)
+                        
+                        bookmark_id += 1
+                    else:
+                        # Accumulate text
+                        for t_elem in node.getElementsByTagName('w:t'):
+                            if t_elem.firstChild:
+                                accumulated_text += t_elem.firstChild.nodeValue
+        
+        # Create notes section
+        notes_xml = []
+        notes_xml.append('<w:p><w:pPr><w:pageBreakBefore/></w:pPr></w:p>')
+        notes_xml.append('<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Notes</w:t></w:r></w:p>')
+        
+        for note_id in sorted(endnotes.keys(), key=lambda x: int(x)):
+            citation = endnotes[note_id]
+            citation = citation.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+            
+            if note_id in references:
+                ref = references[note_id]
+                bookmark_name = ref['bookmark']
+                first_three = ref['first_three'].replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+                
+                note_xml = f'''<w:p>
+<w:pPr><w:spacing w:after="120"/></w:pPr>
+<w:r><w:fldSimple w:instr=" PAGEREF {bookmark_name} \\h "><w:r><w:t>[Page]</w:t></w:r></w:fldSimple></w:r>
+<w:r><w:t xml:space="preserve"> </w:t></w:r>
+<w:r><w:rPr><w:i/><w:iCs/></w:rPr><w:t>{first_three}:</w:t></w:r>
+<w:r><w:t xml:space="preserve"> {citation}</w:t></w:r>
+</w:p>'''
+                notes_xml.append(note_xml)
+        
+        # Add notes to document
+        notes_content = '\n'.join(notes_xml)
+        body_close_pos = content.rfind('</w:body>')
+        if body_close_pos == -1:
+            return False
+        
+        new_content = content[:body_close_pos] + notes_content + '\n' + content[body_close_pos:]
+        
+        with open(doc_file, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+        
+        # Pack document
+        with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, temp_dir)
+                    zipf.write(file_path, arcname)
+        
+        return True
+        
+    except Exception as e:
+        print(f"Error during conversion: {e}")
+        return False
+        
+    finally:
+        if temp_dir.exists():
+            shutil.rmtree(temp_dir)
+
+# ==================== DOCX PROCESSING FUNCTIONS ====================
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() == 'docx'
@@ -385,13 +489,12 @@ def extract_endnotes(path):
         en_id = en.getAttribute('w:id')
         if en_id and en_id not in ['-1', '0']:
             text = ''.join([t.firstChild.nodeValue for t in en.getElementsByTagName('w:t') if t.firstChild])
-            # Clean up the text
             text = re.sub(r'^\s*\d*\s*', '', text).strip()
             endnotes[en_id] = text
     return endnotes
 
 def update_endnotes_xml_formatted(path, formatted):
-    """Update endnotes with formatted citations matching desired output exactly"""
+    """Update endnotes with formatted citations"""
     dom = minidom.parse(str(path))
     
     for en in dom.getElementsByTagName('w:endnote'):
@@ -404,37 +507,31 @@ def update_endnotes_xml_formatted(path, formatted):
                 
             p = paragraphs[0]
             
-            # Clear existing paragraph properties
+            # Clear and rebuild with formatting
             for pPr in p.getElementsByTagName('w:pPr'):
                 p.removeChild(pPr)
             
-            # Create new paragraph properties
             pPr = dom.createElement('w:pPr')
-            
-            # Add EndnoteText style
             pStyle = dom.createElement('w:pStyle')
             pStyle.setAttribute('w:val', 'EndnoteText')
             pPr.appendChild(pStyle)
-            
-            # Add spacing
             spacing = dom.createElement('w:spacing')
             spacing.setAttribute('w:after', '120')
             pPr.appendChild(spacing)
             
-            # Insert paragraph properties
             if p.firstChild:
                 p.insertBefore(pPr, p.firstChild)
             else:
                 p.appendChild(pPr)
             
-            # Find the endnoteRef run and preserve it
+            # Find endnoteRef
             endnote_ref_run = None
             for run in p.getElementsByTagName('w:r'):
                 if run.getElementsByTagName('w:endnoteRef'):
                     endnote_ref_run = run
                     break
             
-            # Remove all runs except the endnoteRef
+            # Remove all other runs
             for run in list(p.getElementsByTagName('w:r')):
                 if run != endnote_ref_run:
                     try:
@@ -442,23 +539,8 @@ def update_endnotes_xml_formatted(path, formatted):
                     except:
                         pass
             
-            # Add a space after the endnote reference
-            if endnote_ref_run:
-                space_run = dom.createElement('w:r')
-                space_text = dom.createElement('w:t')
-                space_text.setAttribute('xml:space', 'preserve')
-                space_text.appendChild(dom.createTextNode(' '))
-                space_run.appendChild(space_text)
-                
-                if endnote_ref_run.nextSibling:
-                    p.insertBefore(space_run, endnote_ref_run.nextSibling)
-                else:
-                    p.appendChild(space_run)
-            
-            # Parse formatted text and add with proper formatting
+            # Add formatted text
             formatted_text = formatted[en_id]
-            
-            # Split by <em> tags to handle italics
             parts = re.split(r'(<em>.*?</em>)', formatted_text)
             
             for part in parts:
@@ -466,58 +548,37 @@ def update_endnotes_xml_formatted(path, formatted):
                     continue
                 
                 new_run = dom.createElement('w:r')
-                
-                # Create run properties
                 rPr = dom.createElement('w:rPr')
                 
-                # Add font - Times New Roman
+                # Times New Roman, 10pt
                 rFonts = dom.createElement('w:rFonts')
                 rFonts.setAttribute('w:ascii', 'Times New Roman')
                 rFonts.setAttribute('w:hAnsi', 'Times New Roman')
-                rFonts.setAttribute('w:cs', 'Times New Roman')
                 rPr.appendChild(rFonts)
                 
-                # Add size - 20 half-points (10pt)
                 sz = dom.createElement('w:sz')
                 sz.setAttribute('w:val', '20')
                 rPr.appendChild(sz)
                 
-                szCs = dom.createElement('w:szCs')
-                szCs.setAttribute('w:val', '20')
-                rPr.appendChild(szCs)
-                
-                # Check if this part should be italic
+                # Handle italics
                 if '<em>' in part:
-                    # Add italic properties
                     i_elem = dom.createElement('w:i')
                     rPr.appendChild(i_elem)
-                    
-                    iCs_elem = dom.createElement('w:iCs')
-                    rPr.appendChild(iCs_elem)
-                    
-                    # Remove the em tags from the text
                     part = re.sub(r'</?em>', '', part)
                 
-                # Add run properties to run
                 new_run.appendChild(rPr)
                 
-                # Add text
                 new_text = dom.createElement('w:t')
                 new_text.setAttribute('xml:space', 'preserve')
                 new_text.appendChild(dom.createTextNode(part))
                 new_run.appendChild(new_text)
                 
-                # Append run to paragraph
                 p.appendChild(new_run)
     
     with open(str(path), 'wb') as f:
         f.write(dom.toxml(encoding='UTF-8'))
 
-# INCIPIT FUNCTIONS (keeping minimal for space)
-def clean_word_for_output(word):
-    word = re.sub(r'^[^\w]+', '', word)
-    word = re.sub(r'[^\w]+$', '', word)
-    return word
+# ==================== FLASK ROUTES ====================
 
 @app.route('/')
 def index():
@@ -525,7 +586,7 @@ def index():
 
 @app.route('/process', methods=['POST'])
 def process():
-    """Process document based on selected mode"""
+    """Main processing route for CiteMaven"""
     
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
@@ -537,61 +598,68 @@ def process():
     mode = request.form.get('mode', 'format')
     style = request.form.get('style', 'chicago')
     
-    print(f"\n{'='*60}")
-    print(f"CiteMaven Processing: {file.filename}")
-    print(f"Mode: {mode}")
-    print(f"Style: {style}")
-    print('='*60)
+    print(f"\nCiteMaven Processing: {file.filename}")
+    print(f"Mode: {mode}, Style: {style}")
     
+    # Special handling for robust incipit mode
+    if mode == 'robust-incipit':
+        with tempfile.TemporaryDirectory() as tmpdir:
+            input_path = os.path.join(tmpdir, secure_filename(file.filename))
+            output_path = os.path.join(tmpdir, f'CiteMaven_robust_incipit_{file.filename}')
+            
+            file.save(input_path)
+            success = convert_document_robust(input_path, output_path)
+            
+            if success and os.path.exists(output_path):
+                return send_file(
+                    output_path,
+                    as_attachment=True,
+                    download_name=f"CiteMaven_robust_incipit_{file.filename}",
+                    mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                )
+            else:
+                return jsonify({'error': 'Robust incipit conversion failed'}), 500
+    
+    # Regular processing for other modes
     temp_dir = None
     
     try:
-        # Setup temp directory
         temp_dir = Path(tempfile.mkdtemp())
         input_path = temp_dir / 'input.docx'
         file.save(input_path)
         
-        # Extract document
         extract_dir = temp_dir / 'extracted'
         unpack_docx(input_path, extract_dir)
         
-        # Check for endnotes
         endnotes_file = extract_dir / 'word' / 'endnotes.xml'
         if not endnotes_file.exists():
             return jsonify({'error': 'No endnotes found in document'}), 400
         
-        # Extract endnotes
         endnotes = extract_endnotes(endnotes_file)
         print(f'✔ Extracted {len(endnotes)} endnotes')
         
         formatted_endnotes = {}
         
-        # Mode 1: Create citations using embedded enhanced creator
-        if mode in ['create', 'complete']:
-            print("\nUsing CiteMaven Enhanced Citation Creator:")
-            print("-"*40)
+        # Mode: Create citations
+        if mode == 'create':
+            print("Using CiteMaven Smart Citation Creation")
             for note_id, text in endnotes.items():
-                # Use the embedded enhanced citation creator
                 formatted_text = process_minimal_citation(text, style)
                 formatted_endnotes[note_id] = formatted_text
-                print(f"  [{note_id}] {text[:30]}...")
-                print(f"       → {formatted_text[:60]}...")
-            
-            print(f'\n✔ Created {len(formatted_endnotes)} complete citations')
+            print(f'✔ Created {len(formatted_endnotes)} complete citations')
         
-        # Mode 2: Format existing citations
+        # Mode: Format existing citations
         elif mode == 'format':
             for note_id, text in endnotes.items():
                 parsed = parser.parse_citation(text)
                 formatted_text = formatter.format_citation(parsed, style)
                 formatted_endnotes[note_id] = formatted_text
-            
-            print(f'✔ Formatted {len(formatted_endnotes)} citations in {style} style')
+            print(f'✔ Formatted {len(formatted_endnotes)} citations')
         
-        # Update endnotes if we have formatting
+        # Update endnotes if needed
         if formatted_endnotes:
             update_endnotes_xml_formatted(endnotes_file, formatted_endnotes)
-            print(f'✔ Updated endnotes with formatting')
+            print('✔ Updated endnotes with formatting')
         
         # Determine output filename
         original_filename = secure_filename(file.filename)
@@ -602,17 +670,14 @@ def process():
         else:
             output_filename = f"CiteMaven_{original_filename}"
         
-        # Pack back into docx
+        # Pack and return
         output_path = temp_dir / output_filename
         pack_docx(extract_dir, output_path)
-        print(f'✔ Created {output_filename}')
         
-        # Read into memory
         with open(output_path, 'rb') as f:
             file_data = f.read()
         
         print(f'✔ Document ready ({len(file_data)} bytes)')
-        print('='*60 + '\n')
         
         # Cleanup
         try:
@@ -620,7 +685,6 @@ def process():
         except:
             pass
         
-        # Return file
         return send_file(
             BytesIO(file_data),
             as_attachment=True,
@@ -643,14 +707,13 @@ def process():
 
 @app.route('/create-citation', methods=['POST'])
 def create_citation():
-    """Create a single citation from minimal input (for manual entry)"""
+    """Create single citation from manual input"""
     data = request.json
     
     author = data.get('author', '')
     title = data.get('title', '')
     style = data.get('style', 'chicago')
     
-    # Use the embedded enhanced citation creator
     result = process_minimal_citation(f"{author}, {title}", style)
     
     return jsonify({
@@ -659,4 +722,5 @@ def create_citation():
     })
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=True, host='0.0.0.0', port=port)
