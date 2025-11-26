@@ -1,217 +1,262 @@
-"""
-Citation Processor - Fixed Duplication Bug
-"""
-from flask import Flask, render_template, request, send_file, jsonify
-from werkzeug.utils import secure_filename
-from io import BytesIO
 import os
 import zipfile
-import xml.dom.minidom as minidom
-import re
-from pathlib import Path
 import shutil
 import tempfile
-
-from citation_parser import CitationParser
-from citation_formatter import CitationFormatter
+import re
+from flask import Flask, render_template, request, jsonify, send_file, session
+from werkzeug.utils import secure_filename
+from datetime import datetime
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
-app.config['SECRET_KEY'] = 'citation-secret-2024'
+app.config['SECRET_KEY'] = 'incipit-genie-production-key'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB
 
-parser = CitationParser()
-formatter = CitationFormatter()
+# Directory settings
+UPLOAD_FOLDER = 'uploads'
+ALLOWED_EXTENSIONS = {'docx'}
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() == 'docx'
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def unpack_docx(docx_path, extract_dir):
-    with zipfile.ZipFile(docx_path, 'r') as zip_ref:
-        zip_ref.extractall(extract_dir)
+# ==========================================
+#  CORE INCIPIT LOGIC
+# ==========================================
 
-def pack_docx(source_dir, output_path):
-    if os.path.exists(output_path):
-        os.remove(output_path)
+def transform_to_incipit(original_text, word_limit=5):
+    """
+    Transforms citation to incipit based on word count.
+    Preserves URLs if they appear in the truncated segment? 
+    (Currently brute force text truncation).
+    """
+    # 1. Clean extra spaces
+    cleaned = ' '.join(original_text.split())
+    
+    # 2. Split logic
+    # If text has a parenthesis (City: Publisher), usually the title is before it.
+    if '(' in cleaned:
+        pre_paren = cleaned.split('(')[0].strip()
+        words = pre_paren.split()
+        if len(words) > word_limit:
+            return ' '.join(words[:word_limit]) + "..."
+        return pre_paren
+    
+    # 3. Fallback word count
+    words = cleaned.split()
+    if len(words) > word_limit:
+        return ' '.join(words[:word_limit]) + "..."
+        
+    return cleaned
+
+# ==========================================
+#  DOCX PROCESSING PIPELINE
+# ==========================================
+
+def extract_docx_xml(file_path):
+    temp_dir = tempfile.mkdtemp()
+    try:
+        with zipfile.ZipFile(file_path, 'r') as zip_ref:
+            zip_ref.extractall(temp_dir)
+        
+        endnotes_path = os.path.join(temp_dir, 'word', 'endnotes.xml')
+        endnotes_content = ""
+        
+        if os.path.exists(endnotes_path):
+            with open(endnotes_path, 'r', encoding='utf-8') as f:
+                endnotes_content = f.read()
+        
+        return {
+            'endnotes': endnotes_content,
+            'temp_dir': temp_dir
+        }
+    except Exception as e:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise e
+
+def parse_endnotes_text(xml_content):
+    if not xml_content:
+        return []
+        
+    citations = []
+    # Find all endnotes
+    note_pattern = r'<w:endnote[^>]*w:id="(\d+)"[^>]*>(.*?)</w:endnote>'
+    matches = re.finditer(note_pattern, xml_content, re.DOTALL)
+    
+    for match in matches:
+        note_id = match.group(1)
+        note_content = match.group(2)
+        
+        if note_id in ['-1', '0']: 
+            continue
+            
+        text_pattern = r'<w:t[^>]*>([^<]+)</w:t>'
+        texts = re.findall(text_pattern, note_content)
+        full_text = ''.join(texts)
+        
+        if full_text.strip():
+            citations.append({
+                'id': note_id,
+                'text': full_text.strip()
+            })
+            
+    return citations
+
+def rebuild_docx_with_incipits(original_structure, formatted_map, output_path, style_pref='none'):
+    """
+    Replaces citation text and applies formatting (Bold/Italic).
+    """
+    temp_dir = original_structure['temp_dir']
+    endnotes_path = os.path.join(temp_dir, 'word', 'endnotes.xml')
+    
+    with open(endnotes_path, 'r', encoding='utf-8') as f:
+        xml_content = f.read()
+    
+    # Define style XML tags
+    # <w:rPr> is Run Properties
+    # <w:b/> is Bold, <w:i/> is Italic
+    style_xml = ""
+    if style_pref in ['bold', 'bold_italic']:
+        style_xml += "<w:b/>"
+    if style_pref in ['italic', 'bold_italic']:
+        style_xml += "<w:i/>"
+        
+    # Wrapper for the new text run
+    # We wrap the text in a Paragraph (<w:p>) containing a Run (<w:r>) containing Props and Text
+    # This is the safest way to replace mixed content (like hyperlinks) with a clean Incipit.
+    
+    for note_id, new_text in formatted_map.items():
+        # Find the specific endnote block
+        note_pattern = f'(<w:endnote[^>]*w:id="{note_id}"[^>]*>)(.*?)(</w:endnote>)'
+        match = re.search(note_pattern, xml_content, re.DOTALL)
+        
+        if match:
+            start_tag = match.group(1)
+            # We don't use inner_xml here because we are nuking the old content
+            end_tag = match.group(3)
+            
+            # Construct new content
+            # <w:p> -> <w:r> -> <w:rPr>(Styles) -> <w:t>(Text)
+            
+            # Note: We need to preserve the w:pPr (paragraph properties) if possible, 
+            # but for a pure Incipit transformer, a standard paragraph usually works.
+            # To be safe, we create a standard run.
+            
+            new_inner_xml = (
+                f'<w:p>'
+                f'<w:pPr><w:pStyle w:val="EndnoteText"/></w:pPr>'
+                f'<w:r>'
+                f'<w:rPr>{style_xml}</w:rPr>'
+                f'<w:t xml:space="preserve">{new_text}</w:t>'
+                f'</w:r>'
+                f'</w:p>'
+            )
+            
+            # Replace the entire endnote content
+            full_replacement = f"{start_tag}{new_inner_xml}{end_tag}"
+            xml_content = xml_content.replace(match.group(0), full_replacement)
+
+    with open(endnotes_path, 'w', encoding='utf-8') as f:
+        f.write(xml_content)
+        
     with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, dirs, files in os.walk(source_dir):
+        for root, dirs, files in os.walk(temp_dir):
             for file in files:
                 file_path = os.path.join(root, file)
-                arcname = os.path.relpath(file_path, source_dir)
+                arcname = os.path.relpath(file_path, temp_dir)
                 zipf.write(file_path, arcname)
 
-def extract_endnotes(path):
-    dom = minidom.parse(str(path))
-    endnotes = {}
-    for en in dom.getElementsByTagName('w:endnote'):
-        en_id = en.getAttribute('w:id')
-        if en_id and en_id not in ['-1', '0']:
-            text = ''.join([t.firstChild.nodeValue for t in en.getElementsByTagName('w:t') if t.firstChild])
-            endnotes[en_id] = text
-    return endnotes
-
-def update_endnotes_xml(path, formatted):
-    """
-    FIXED: Properly replaces text without duplication
-    Preserves endnote reference number and paragraph style
-    """
-    dom = minidom.parse(str(path))
-    
-    for en in dom.getElementsByTagName('w:endnote'):
-        en_id = en.getAttribute('w:id')
-        
-        if en_id in formatted:
-            # Get the paragraph element
-            paragraphs = en.getElementsByTagName('w:p')
-            if not paragraphs:
-                continue
-                
-            p = paragraphs[0]
-            
-            # Find all runs (w:r elements)
-            runs = list(p.getElementsByTagName('w:r'))
-            
-            # Keep track of which runs to remove
-            runs_to_remove = []
-            endnote_ref_found = False
-            
-            for run in runs:
-                # Check if this run contains the endnote reference
-                has_ref = run.getElementsByTagName('w:endnoteRef')
-                
-                if has_ref:
-                    endnote_ref_found = True
-                    # Keep this run (it's the footnote number)
-                else:
-                    # Mark for removal (it's citation text)
-                    if endnote_ref_found:
-                        runs_to_remove.append(run)
-            
-            # Remove old citation text runs
-            for run in runs_to_remove:
-                p.removeChild(run)
-            
-            # Create new run with formatted citation
-            new_run = dom.createElement('w:r')
-            new_text = dom.createElement('w:t')
-            new_text.setAttribute('xml:space', 'preserve')
-            
-            # Strip HTML tags from formatted text
-            clean_text = re.sub(r'<em>|</em>', '', formatted[en_id])
-            
-            # Add the formatted text
-            text_content = dom.createTextNode(clean_text)
-            new_text.appendChild(text_content)
-            new_run.appendChild(new_text)
-            
-            # Append the new run to the paragraph
-            p.appendChild(new_run)
-    
-    # Write back to file
-    with open(str(path), 'wb') as f:
-        f.write(dom.toxml(encoding='UTF-8'))
+# ==========================================
+#  ROUTES
+# ==========================================
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/process', methods=['POST'])
-def process():
-    """One-step processing: upload → format → download"""
-    
+@app.route('/upload', methods=['POST'])
+def upload_file():
     if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+        
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        save_path = os.path.join(UPLOAD_FOLDER, f"{timestamp}_{filename}")
+        file.save(save_path)
+        
+        try:
+            structure = extract_docx_xml(save_path)
+            citations = parse_endnotes_text(structure['endnotes'])
+            
+            session['current_file'] = save_path
+            session['original_filename'] = filename
+            
+            shutil.rmtree(structure['temp_dir'], ignore_errors=True)
+            
+            return jsonify({
+                'success': True,
+                'count': len(citations)
+            })
+            
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+            
+    return jsonify({'error': 'Invalid file'}), 400
+
+@app.route('/transform', methods=['POST'])
+def transform():
+    if 'current_file' not in session:
         return jsonify({'error': 'No file uploaded'}), 400
     
-    file = request.files['file']
-    if not file.filename or not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file. Please upload a .docx file'}), 400
+    data = request.json
+    word_count = data.get('word_count', 5)
+    style_pref = data.get('style', 'none')
     
-    temp_dir = None
+    file_path = session['current_file']
     
     try:
-        # Setup temp directory
-        temp_dir = Path(tempfile.mkdtemp())
-        input_path = temp_dir / 'input.docx'
-        file.save(input_path)
+        structure = extract_docx_xml(file_path)
+        citations = parse_endnotes_text(structure['endnotes'])
         
-        # Extract document
-        extract_dir = temp_dir / 'extracted'
-        unpack_docx(input_path, extract_dir)
-        
-        # Check for endnotes
-        endnotes_file = extract_dir / 'word' / 'endnotes.xml'
-        if not endnotes_file.exists():
-            return jsonify({'error': 'No endnotes found in document'}), 400
-        
-        # Extract endnotes
-        endnotes = extract_endnotes(endnotes_file)
-        print(f'✓ Extracted {len(endnotes)} endnotes')
-        
-        if len(endnotes) == 0:
-            return jsonify({'error': 'No endnotes found in document'}), 400
-        
-        # Get citation style
-        style = request.form.get('style', 'chicago')
-        
-        # Process each endnote
-        formatted_endnotes = {}
-        for note_id, text in endnotes.items():
-            # Parse citation
-            parsed = parser.parse_citation(text)
+        formatted_map = {}
+        for citation in citations:
+            new_text = transform_to_incipit(citation['text'], word_limit=word_count)
+            formatted_map[citation['id']] = new_text
             
-            # Format according to style
-            formatted_text = formatter.format_citation(parsed, style)
-            
-            # Store formatted version
-            formatted_endnotes[note_id] = formatted_text
-            
-            print(f'  [{note_id}] {parsed["source_type"]}: {text[:50]}...')
+        output_filename = f"Incipit_{style_pref}_{session['original_filename']}"
+        output_path = os.path.join(UPLOAD_FOLDER, output_filename)
         
-        print(f'✓ Formatted {len(formatted_endnotes)} citations in {style} style')
+        # Pass style_pref to the rebuilder
+        rebuild_docx_with_incipits(structure, formatted_map, output_path, style_pref=style_pref)
         
-        # Update endnotes.xml (FIXED - no more duplication!)
-        update_endnotes_xml(endnotes_file, formatted_endnotes)
-        print(f'✓ Updated endnotes.xml (no duplication)')
+        shutil.rmtree(structure['temp_dir'], ignore_errors=True)
         
-        # Pack back into docx
-        original_filename = secure_filename(file.filename)
-        output_filename = f"formatted_{original_filename}"
-        output_path = temp_dir / output_filename
-        pack_docx(extract_dir, output_path)
-        print(f'✓ Created {output_filename}')
+        session['output_file'] = output_path
+        session['output_filename'] = output_filename
         
-        # Read into memory before cleanup
-        with open(output_path, 'rb') as f:
-            file_data = f.read()
-        
-        print(f'✓ Document ready ({len(file_data)} bytes)')
-        
-        # Cleanup
-        try:
-            shutil.rmtree(temp_dir)
-        except:
-            pass
-        
-        # Return file
-        return send_file(
-            BytesIO(file_data),
-            as_attachment=True,
-            download_name=output_filename,
-            mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        )
+        return jsonify({'success': True})
         
     except Exception as e:
-        print(f'✗ Error: {e}')
-        import traceback
-        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/download')
+def download():
+    if 'output_file' not in session:
+        return jsonify({'error': 'No file ready'}), 400
         
-        # Cleanup on error
-        if temp_dir and temp_dir.exists():
-            try:
-                shutil.rmtree(temp_dir)
-            except:
-                pass
-        
-        return jsonify({'error': f'Processing failed: {str(e)}'}), 500
+    return send_file(
+        session['output_file'],
+        as_attachment=True,
+        download_name=session.get('output_filename', 'incipit_notes.docx')
+    )
+
+@app.route('/reset', methods=['POST'])
+def reset():
+    session.clear()
+    return jsonify({'success': True})
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
