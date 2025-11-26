@@ -26,8 +26,6 @@ def allowed_file(filename):
 def transform_to_incipit(original_text, word_limit=5):
     """
     Transforms citation to incipit based on word count.
-    Preserves URLs if they appear in the truncated segment? 
-    (Currently brute force text truncation).
     """
     # 1. Clean extra spaces
     cleaned = ' '.join(original_text.split())
@@ -120,10 +118,6 @@ def rebuild_docx_with_incipits(original_structure, formatted_map, output_path, s
     if style_pref in ['italic', 'bold_italic']:
         style_xml += "<w:i/>"
         
-    # Wrapper for the new text run
-    # We wrap the text in a Paragraph (<w:p>) containing a Run (<w:r>) containing Props and Text
-    # This is the safest way to replace mixed content (like hyperlinks) with a clean Incipit.
-    
     for note_id, new_text in formatted_map.items():
         # Find the specific endnote block
         note_pattern = f'(<w:endnote[^>]*w:id="{note_id}"[^>]*>)(.*?)(</w:endnote>)'
@@ -131,16 +125,9 @@ def rebuild_docx_with_incipits(original_structure, formatted_map, output_path, s
         
         if match:
             start_tag = match.group(1)
-            # We don't use inner_xml here because we are nuking the old content
             end_tag = match.group(3)
             
             # Construct new content
-            # <w:p> -> <w:r> -> <w:rPr>(Styles) -> <w:t>(Text)
-            
-            # Note: We need to preserve the w:pPr (paragraph properties) if possible, 
-            # but for a pure Incipit transformer, a standard paragraph usually works.
-            # To be safe, we create a standard run.
-            
             new_inner_xml = (
                 f'<w:p>'
                 f'<w:pPr><w:pStyle w:val="EndnoteText"/></w:pPr>'
@@ -151,7 +138,6 @@ def rebuild_docx_with_incipits(original_structure, formatted_map, output_path, s
                 f'</w:p>'
             )
             
-            # Replace the entire endnote content
             full_replacement = f"{start_tag}{new_inner_xml}{end_tag}"
             xml_content = xml_content.replace(match.group(0), full_replacement)
 
@@ -229,7 +215,6 @@ def transform():
         output_filename = f"Incipit_{style_pref}_{session['original_filename']}"
         output_path = os.path.join(UPLOAD_FOLDER, output_filename)
         
-        # Pass style_pref to the rebuilder
         rebuild_docx_with_incipits(structure, formatted_map, output_path, style_pref=style_pref)
         
         shutil.rmtree(structure['temp_dir'], ignore_errors=True)
