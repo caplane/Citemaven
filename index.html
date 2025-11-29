@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Citation Maven | Enterprise Publishing Solutions</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* --- DESIGN TOKENS --- */
+        :root {
+            --primary: #0f172a; /* Midnight Navy */
+            --secondary: #334155; /* Slate */
+            --accent: #b49b67; /* Academic Gold/Bronze */
+            --bg-light: #f8fafc;
+            --white: #ffffff;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            
+            --font-heading: 'Playfair Display', serif; /* evokes books/academia */
+            --font-body: 'Inter', sans-serif; /* evokes modern tech */
+            
+            --spacing-container: 1200px;
+        }
+
+        /* --- RESET & BASE --- */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: var(--font-body);
+            color: var(--text-main);
+            background-color: var(--white);
+            line-height: 1.7;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        h1, h2, h3, h4 {
+            font-family: var(--font-heading);
+            color: var(--primary);
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        /* --- TYPOGRAPHY IMPORTS --- */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+
+        /* --- LAYOUT UTILITIES --- */
+        .container {
+            max-width: var(--spacing-container);
+            margin: 0 auto;
+            padding: 0 2rem;
+        }
+
+        .section { padding: 6rem 0; }
+        
+        .bg-light { background-color: var(--bg-light); }
+
+        /* --- NAVIGATION --- */
+        nav {
+            padding: 1.5rem 0;
+            position: fixed;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+
+        .nav-inner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: var(--font-heading);
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary);
+            text-decoration: none;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo i { color: var(--accent); font-size: 1.2rem; }
+
+        .nav-links {
+            display: flex;
+            gap: 2.5rem;
+            align-items: center;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: var(--secondary);
+            font-weight: 500;
+            font-size: 0.95rem;
+            transition: color 0.2s;
+        }
+
+        .nav-links a:hover { color: var(--accent); }
+
+        .btn-nav {
+            padding: 0.6rem 1.2rem;
+            border: 1px solid var(--secondary);
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+
+        .btn-nav:hover {
+            background: var(--primary);
+            color: var(--white);
+            border-color: var(--primary);
+        }
+
+        /* --- HERO SECTION --- */
+        .hero {
+            padding-top: 10rem;
+            padding-bottom: 6rem;
+            text-align: center;
+            background: radial-gradient(circle at top right, #f1f5f9 0%, #ffffff 50%);
+        }
+
+        .patent-badge {
+            display: inline-block;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.03);
+        }
+
+        .patent-badge span { color: var(--accent); font-weight: 600; }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            margin-bottom: 1.5rem;
+            max-width: 900px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            color: var(--text-muted);
+            max-width: 700px;
+            margin: 0 auto 3rem auto;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: var(--white);
+            padding: 1rem 2.5rem;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: inline-block;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(15, 23, 42, 0.2);
+        }
+
+        /* --- STATISTICS GRID --- */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2rem;
+            margin-top: 4rem;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 4rem;
+        }
+
+        .stat-item h3 {
+            font-size: 2.5rem;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+            font-family: var(--font-body);
+        }
+
+        .stat-item p {
+            font-size: 0.95rem;
+            color: var(--secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        /* --- PRODUCT SHOWCASE (Incipit Genie) --- */
+        .product-split {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4rem;
+            align-items: center;
+        }
+
+        .product-content h2 { font-size: 2.5rem; margin-bottom: 1.5rem; }
+        
+        .product-feature {
+            margin-bottom: 2rem;
+            padding-left: 1.5rem;
+            border-left: 2px solid var(--accent);
+        }
+
+        .product-feature h4 { font-size: 1.2rem; margin-bottom: 0.5rem; font-family: var(--font-body); }
+        .product-feature p { font-size: 1rem; color: var(--text-muted); }
+
+        .app-window {
+            background: var(--white);
+            border-radius: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.1);
+            overflow: hidden;
+            border: 1px solid #e2e8f0;
+        }
+
+        .app-header {
+            background: #f1f5f9;
+            padding: 10px 15px;
+            display: flex;
+            gap: 8px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .dot { width: 10px; height: 10px; border-radius: 50%; }
+        .dot.red { background: #ff5f56; }
+        .dot.yellow { background: #ffbd2e; }
+        .dot.green { background: #27c93f; }
+
+        .app-body { padding: 40px; text-align: center; }
+        .app-body img { max-width: 100%; height: auto; }
+
+        /* --- COMPARISON TABLE --- */
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--white);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .comparison-table th, .comparison-table td {
+            padding: 1.5rem;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .comparison-table th {
+            background: var(--primary);
+            color: var(--white);
+            font-family: var(--font-body);
+            font-weight: 500;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 1px;
+        }
+
+        .comparison-table tr:last-child td { border-bottom: none; }
+        .comparison-table td:first-child { font-weight: 600; color: var(--primary); }
+        .highlight-cell { color: var(--accent); font-weight: 700; }
+
+        /* --- FOOTER --- */
+        footer {
+            background: var(--primary);
+            color: var(--white);
+            padding: 4rem 0;
+            font-size: 0.9rem;
+        }
+
+        .footer-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 4rem;
+            margin-bottom: 3rem;
+        }
+
+        .footer-brand h3 { color: var(--white); margin-bottom: 1rem; }
+        .footer-brand p { color: #94a3b8; max-width: 300px; }
+        
+        .footer-links h4 { color: var(--accent); margin-bottom: 1.2rem; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; }
+        .footer-links ul { list-style: none; }
+        .footer-links li { margin-bottom: 0.8rem; }
+        .footer-links a { color: #cbd5e1; text-decoration: none; transition: color 0.2s; }
+        .footer-links a:hover { color: var(--white); }
+
+        .legal-line {
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding-top: 2rem;
+            text-align: center;
+            color: #64748b;
+        }
+
+        /* --- RESPONSIVE --- */
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2.5rem; }
+            .stats-grid, .product-split, .footer-grid { grid-template-columns: 1fr; gap: 2rem; }
+            .nav-links { display: none; } /* Simplified for demo */
+        }
+    </style>
+</head>
+<body>
+
+    <nav>
+        <div class="container nav-inner">
+            <a href="#" class="logo">
+                <i class="fas fa-feather-alt"></i>
+                Citation Maven
+            </a>
+            <div class="nav-links">
+                <a href="#technology">Technology</a>
+                <a href="#roi">Business Case</a>
+                <a href="#about">About</a>
+                <a href="https://www.incipitgenie.com" target="_blank" class="btn-nav">Launch Incipit Genie</a>
+            </div>
+        </div>
+    </nav>
+
+    <section class="hero">
+        <div class="container">
+            <div class="patent-badge">
+                [cite_start]<i class="fas fa-lock"></i> Patent Pending <span>US 63/923,213</span> [cite: 7]
+            </div>
+            <h1>Automated Editorial Precision for University Presses</h1>
+            <p>Citation Maven introduces <strong>Incipit Genie™</strong>: The first algorithmic workflow to automate "blind note" conversion and dynamic pagination for scholarly manuscripts.</p>
+            <a href="#contact" class="btn-primary">Request Enterprise Licensing</a>
+
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <h3>95%</h3>
+                    [cite_start]<p>Reduction in Processing Time [cite: 53]</p>
+                </div>
+                <div class="stat-item">
+                    <h3>$4.5k</h3>
+                    [cite_start]<p>Savings Per Monograph [cite: 57]</p>
+                </div>
+                <div class="stat-item">
+                    <h3>Zero</h3>
+                    [cite_start]<p>Revision Breakage [cite: 111]</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="technology" class="section bg-light">
+        <div class="container">
+            <div class="product-split">
+                <div class="product-content">
+                    <h2>The End of the "Blind Note" Bottleneck</h2>
+                    <p style="margin-bottom: 2rem; color: var(--text-muted);">
+                        Creating reader-friendly endnotes traditionally requires 50+ hours of manual labor per title. Citation Maven uses semantic extraction to solve this.
+                    </p>
+                    
+                    <div class="product-feature">
+                        <h4>Semantic Boundary Detection</h4>
+                        [cite_start]<p>Our patent-pending algorithm uses punctuation hierarchy to extract meaningful "incipits" (opening phrases) with 97% accuracy. [cite: 114]</p>
+                    </div>
+
+                    <div class="product-feature">
+                        <h4>Dynamic Synchronization</h4>
+                        <p>Page references are implemented as calculated fields. [cite_start]When margins change or paragraphs are cut, a simple update command refreshes every page number instantly. [cite: 111]</p>
+                    </div>
+
+                    <div class="product-feature">
+                        <h4>Scholarly Compliance</h4>
+                        <p>Full support for Chicago (17th Ed.), MLA, APA, Bluebook, and Oxford styles. [cite_start]Handles complex "Ibid" and short-title references automatically. [cite: 49]</p>
+                    </div>
+                </div>
+
+                <div class="app-window">
+                    <div class="app-header">
+                        <div class="dot red"></div>
+                        <div class="dot yellow"></div>
+                        <div class="dot green"></div>
+                    </div>
+                    <div class="app-body">
+                        <div style="padding: 2rem; background: #f8fafc; border: 2px dashed #e2e8f0; border-radius: 8px;">
+                            <i class="fas fa-magic" style="font-size: 3rem; color: var(--accent); margin-bottom: 1rem;"></i>
+                            <h4 style="color: var(--secondary);">Incipit Genie™ Pro</h4>
+                            <p style="font-size: 0.9rem; margin-top: 1rem;">Processing 750 Endnotes...</p>
+                            <div style="width: 100%; height: 6px; background: #e2e8f0; border-radius: 3px; margin-top: 10px; overflow: hidden;">
+                                <div style="width: 100%; height: 100%; background: var(--accent);"></div>
+                            </div>
+                            <p style="font-size: 0.8rem; color: #27ae60; margin-top: 10px;"><strong>Done in 0.4 seconds</strong></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="roi" class="section">
+        <div class="container">
+            <div style="text-align: center; max-width: 800px; margin: 0 auto 4rem auto;">
+                <h2>Quantifiable Efficiency</h2>
+                <p>For a university press publishing 30–40 scholarly titles annually, Citation Maven represents a strategic asset.</p>
+            </div>
+
+            <table class="comparison-table">
+                <thead>
+                    <tr>
+                        <th style="width: 40%;">Workflow Metric</th>
+                        <th style="width: 30%;">Traditional Process</th>
+                        <th style="width: 30%;">With Incipit Genie™</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Initial Conversion Time</td>
+                        <td>50–75 Hours</td>
+                        [cite_start]<td class="highlight-cell">&lt; 5 Minutes [cite: 45]</td>
+                    </tr>
+                    <tr>
+                        <td>Revision Updates</td>
+                        <td>25+ Hours per round</td>
+                        [cite_start]<td class="highlight-cell">Automatic / Instant [cite: 111]</td>
+                    </tr>
+                    <tr>
+                        <td>Transcription Accuracy</td>
+                        <td>High Error Risk</td>
+                        [cite_start]<td class="highlight-cell">100% Citation Integrity [cite: 48]</td>
+                    </tr>
+                    <tr>
+                        <td>Editorial Cost</td>
+                        <td>$3,000–$4,500 / Title</td>
+                        [cite_start]<td class="highlight-cell">Standard License Fee [cite: 57]</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <div style="margin-top: 3rem; background: #f0f9ff; padding: 2rem; border-left: 4px solid var(--primary); border-radius: 4px;">
+                <p style="font-style: italic; font-family: var(--font-heading); font-size: 1.1rem; color: var(--secondary);">
+                    [cite_start]"What would have required a skilled editor working for two full weeks was accomplished in the time it takes to review a book proposal." [cite: 74]
+                </p>
+                [cite_start]<p style="margin-top: 1rem; font-weight: 600; font-size: 0.9rem;">— Validated on "When Healing Harms" (750 Endnotes, UC Press, 2026) [cite: 153]</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="about" class="section bg-light">
+        <div class="container">
+            <div class="product-split">
+                <div>
+                     <h4 style="color: var(--accent); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 1rem;">The Founder</h4>
+                     <h2>Eric Caplan, PhD</h2>
+                     <p style="margin-bottom: 1.5rem;">
+                         Citation Maven was founded to bridge the gap between scholarly rigor and production efficiency. The technology was conceived when Dr. Caplan realized that authors naturally encode semantic boundaries in their citations through punctuation.
+                     </p>
+                     <p>
+                         [cite_start]Rather than treating punctuation as noise, Incipit Genie uses it as a hierarchical map to automate the most laborious aspect of academic publishing. [cite: 187]
+                     </p>
+                     <p style="margin-top: 1.5rem; font-weight: 600;">
+                        [cite_start]<i class="fas fa-map-marker-alt" style="color: var(--accent); margin-right: 8px;"></i> Bethesda, Maryland [cite: 163]
+                     </p>
+                </div>
+                <div style="background: #e2e8f0; height: 400px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">
+                    <i class="fas fa-user-tie" style="font-size: 5rem; color: #cbd5e1;"></i>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer id="contact">
+        <div class="container">
+            <div class="footer-grid">
+                <div class="footer-brand">
+                    <h3>Citation Maven</h3>
+                    <p>The enterprise standard for automated blind note conversion and scholarly manuscript production.</p>
+                </div>
+                <div class="footer-links">
+                    <h4>Company</h4>
+                    <ul>
+                        <li><a href="#">About Us</a></li>
+                        <li><a href="#">Methodology</a></li>
+                        <li><a href="#">Careers</a></li>
+                    </ul>
+                </div>
+                <div class="footer-links">
+                    <h4>Contact</h4>
+                    <ul>
+                        [cite_start]<li><a href="mailto:enterprise@incipitgenie.com">enterprise@incipitgenie.com</a> [cite: 134]</li>
+                        <li><a href="#">Request Demo</a></li>
+                        <li><a href="#">Support</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="legal-line">
+                <p>&copy; 2025 Citation Maven LLC. All Rights Reserved. US Patent Pending App. [cite_start]#63/923,213. [cite: 7]</p>
+            </div>
+        </div>
+    </footer>
+
+</body>
+</html>
